@@ -1,8 +1,7 @@
-import ollama
 import logging
 from datetime import datetime
 from config import *
-from mcp_client import MCPClient  # Теперь это настоящий клиент!
+from mcp_client import MCPClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,16 +16,29 @@ class RAGSystem:
             try:
                 self.mcp_client = MCPClient()
                 if self.mcp_client.is_server_running():
-                    logger.info("🚀 RAG система с НАСТОЯЩИМ MCP клиентом")
+                    server_info = self.mcp_client.get_server_info()
+                    services = server_info.get("services", {})
+                    
+                    logger.info("🚀 RAG система с УНИВЕРСАЛЬНЫМ MCP клиентом")
+                    logger.info(f"📊 Сервисы: БД({services.get('vector_db', 'unknown')}), Модели({services.get('llm_models', 'unknown')})")
+                    
+                    # Покажем доступные модели
+                    available_models = self.mcp_client.list_models()
+                    if available_models:
+                        logger.info(f"📋 Модели на сервере: {', '.join(available_models)}")
+                    else:
+                        logger.warning("⚠️ На сервере нет доступных моделей")
                 else:
-                    logger.error("❌ MCP сервер недоступен! Запустите: python mcp_servers/vector_mcp_server.py")
+                    logger.error("❌ MCP сервер недоступен! Запустите: python mcp_servers/ai_mcp_server.py")
                     self.use_mcp = False
             except Exception as e:
                 logger.error(f"❌ Ошибка инициализации MCP клиента: {e}")
                 self.use_mcp = False
         else:
             from vector_db import VectorStore
+            import ollama
             self.vector_db = VectorStore()
+            self.ollama_client = ollama.Client()
             logger.info("🔧 RAG система с прямыми вызовами")
     
     def add_initial_knowledge(self):
@@ -66,56 +78,55 @@ class RAGSystem:
         if self.use_mcp:
             info = self.mcp_client.get_collection_info()
             print(f"📈 В базе теперь: {info.get('document_count', 0)} документов")
+            
+            # Покажем информацию о сервере
+            server_info = self.mcp_client.get_server_info()
+            print(f"🔧 Сервер: {server_info.get('models_available', 0)} моделей доступно")
 
-    # Остальные методы остаются без изменений, но теперь используют НАСТОЯЩИЙ MCP
-    
     def process_query(self, user_query: str) -> str:
-        """Основной метод обработки запроса"""
+        """Основной метод обработки запроса через MCP сервер"""
         logger.info(f"👤 Получен запрос: {user_query}")
         
-        # 1. Поиск релевантной информации
         if self.use_mcp:
-            relevant_docs = self.mcp_client.search_documents(user_query)
+            # Используем полный RAG pipeline через MCP сервер
+            result = self.mcp_client.rag_query(
+                query=user_query,
+                model=self.model_name,
+                top_k=3
+            )
+            
+            answer = result.get("answer", "Ошибка при обработке запроса")
+            documents_found = result.get("documents_found", 0)
+            timing = result.get("timing", {})
+            
+            logger.info(f"✅ RAG ответ: {documents_found} док., {timing.get('total', 0)} сек")
+            
         else:
+            # Старая логика с прямыми вызовами
             relevant_docs = self.vector_db.search_similar(user_query)
-        
-        # 2. Формирование промита
-        context = "\n".join(relevant_docs) if relevant_docs else "Информация не найдена в базе знаний."
-        
-        prompt = f"""Ты - полезный ассистент с доступом к базе знаний. Ответь на вопрос используя контекст.
+            context = "\n".join(relevant_docs) if relevant_docs else "Информация не найдена в базе знаний."
+            
+            prompt = f"""Ты - полезный ассистент с доступом к базе знаний. Ответь на вопрос используя контекст.
 
 КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ:
 {context}
 
 ВОПРОС: {user_query}
 
-Ответь кратко и по делу на основе контекста. Если в контексте нет информации, скажи "Я не нашел информации по этому вопросу в базе знаний".
+Ответь кратко и по делу на основе контекста.
 
 ОТВЕТ:"""
-        
-        # 3. Генерация ответа через Ollama
-        try:
-            logger.info("🤖 Генерация ответа...")
-            response = ollama.generate(
+            
+            response = self.ollama_client.generate(
                 model=self.model_name,
-                prompt=prompt,
-                options={
-                    'num_thread': 6,
-                    'num_predict': 150,
-                    'temperature': 0.1
-                }
+                prompt=prompt
             )
             answer = response['response'].strip()
-            logger.info("✅ Ответ сгенерирован")
-        except Exception as e:
-            error_msg = f"Ошибка при генерации ответа: {e}"
-            logger.error(f"❌ {error_msg}")
-            answer = error_msg
         
-        # 4. Сохранение в историю и базу знаний
+        # Сохранение в историю и базу знаний
         self.dialog_history.extend([f"User: {user_query}", f"Assistant: {answer}"])
         
-        # 5. Сохранение в базу знаний (только хорошие ответы)
+        # Сохранение в базу знаний (только хорошие ответы)
         if self.should_save_to_memory(user_query, answer):
             self.save_to_memory(user_query, answer)
         
@@ -123,12 +134,28 @@ class RAGSystem:
     
     def should_save_to_memory(self, query: str, response: str) -> bool:
         """Определяет, стоит ли сохранять ответ в память"""
-        if not response or len(response) < 20:
+        if not response or len(response) < 10:
             return False
-        if any(word in response.lower() for word in ["не знаю", "извините", "ошибка"]):
+        
+        # Не сохраняем если ответ содержит части промпта
+        forbidden_phrases = [
+            "разъясняя ответ", "контекст из базы знаний", 
+            "отправляй наш вопрос", "неизвестно", "не знаю",
+            "контекст:", "вопрос:", "ответ:"
+        ]
+        
+        response_lower = response.lower()
+        if any(phrase in response_lower for phrase in forbidden_phrases):
             return False
+            
+        # Не сохраняем приветствия
         if any(word in query.lower() for word in ["привет", "здравствуй", "hello"]):
             return False
+            
+        # Проверяем что ответ осмысленный (содержит законченные предложения)
+        if len(response.split('.')) < 1:
+            return False
+            
         return True
     
     def save_to_memory(self, query: str, response: str):
@@ -159,15 +186,32 @@ class RAGSystem:
         """Получение информации о системе"""
         if self.use_mcp:
             db_info = self.mcp_client.get_collection_info()
+            server_info = self.mcp_client.get_server_info()
+            models = self.mcp_client.list_models()
+            
             doc_count = db_info.get("document_count", 0)
+            models_available = server_info.get("models_available", 0)
+            
         else:
             db_info = self.vector_db.get_collection_info()
             doc_count = db_info.get("document_count", 0)
+            models_available = 1  # только локальная модель
+            models = [self.model_name]
             
         return {
             "model": self.model_name,
             "using_mcp": self.use_mcp,
             "dialog_history_length": len(self.dialog_history),
             "documents_in_db": doc_count,
+            "models_available": models_available,
+            "available_models": models,
             "mcp_available": self.mcp_client.is_server_running() if self.use_mcp else False
         }
+    
+    def test_model_generation(self, prompt: str = "Напиши коротко о искусственном интеллекте") -> str:
+        """Тестирование генерации текста через MCP"""
+        if self.use_mcp:
+            return self.mcp_client.generate_text(prompt, self.model_name)
+        else:
+            response = self.ollama_client.generate(model=self.model_name, prompt=prompt)
+            return response['response']
