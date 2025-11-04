@@ -2,7 +2,7 @@ import ollama
 import logging
 from datetime import datetime
 from config import *
-from mcp_client import MCPClient
+from mcp_client import MCPClient  # Теперь это настоящий клиент!
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,11 +14,15 @@ class RAGSystem:
         self.use_mcp = use_mcp
         
         if self.use_mcp:
-            self.mcp_client = MCPClient()
-            if self.mcp_client.is_server_running():
-                logger.info("🚀 RAG система с MCP клиентом")
-            else:
-                logger.warning("❌ MCP сервер недоступен")
+            try:
+                self.mcp_client = MCPClient()
+                if self.mcp_client.is_server_running():
+                    logger.info("🚀 RAG система с НАСТОЯЩИМ MCP клиентом")
+                else:
+                    logger.error("❌ MCP сервер недоступен! Запустите: python mcp_servers/vector_mcp_server.py")
+                    self.use_mcp = False
+            except Exception as e:
+                logger.error(f"❌ Ошибка инициализации MCP клиента: {e}")
                 self.use_mcp = False
         else:
             from vector_db import VectorStore
@@ -26,7 +30,7 @@ class RAGSystem:
             logger.info("🔧 RAG система с прямыми вызовами")
     
     def add_initial_knowledge(self):
-        """Добавление начальных знаний в систему"""
+        """Добавление начальных знаний через MCP сервер"""
         initial_knowledge = [
             "Машинное обучение - это раздел искусственного интеллекта, который позволяет компьютерам обучаться на данных.",
             "Python является популярным языком программирования для анализа данных и машинного обучения.",
@@ -35,8 +39,9 @@ class RAGSystem:
             "Векторная база данных хранит информацию в виде числовых векторов для семантического поиска."
         ]
         
-        print("📚 Загрузка начальной базы знаний...")
+        print("📚 Загрузка начальной базы знаний через MCP...")
         
+        success_count = 0
         for knowledge in initial_knowledge:
             if self.use_mcp:
                 success = self.mcp_client.add_document(
@@ -44,12 +49,25 @@ class RAGSystem:
                     {"source": "base_knowledge", "type": "fact"}
                 )
                 if success:
-                    print(f"✅ Добавлено: {knowledge[:50]}...")
+                    success_count += 1
+                    print(f"✅ Добавлено через MCP: {knowledge[:50]}...")
+                else:
+                    print(f"❌ Ошибка добавления: {knowledge[:50]}...")
             else:
                 self.vector_db.add_documents(
                     [knowledge], 
                     [{"source": "base_knowledge", "type": "fact"}]
                 )
+                success_count += 1
+        
+        print(f"📊 Итого добавлено документов: {success_count}/{len(initial_knowledge)}")
+        
+        # Покажем информацию о коллекции
+        if self.use_mcp:
+            info = self.mcp_client.get_collection_info()
+            print(f"📈 В базе теперь: {info.get('document_count', 0)} документов")
+
+    # Остальные методы остаются без изменений, но теперь используют НАСТОЯЩИЙ MCP
     
     def process_query(self, user_query: str) -> str:
         """Основной метод обработки запроса"""
