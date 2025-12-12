@@ -81,7 +81,7 @@ class AIMCPServer:
     def _init_llm_client(self):
         """Инициализация клиента для работы с LLM моделями"""
         try:
-            self.ollama_client = OllamaClient(host='http://localhost:11434')
+            self.ollama_client = OllamaClient(host='http://ai-dev.hpclab:11434')
             
             # Проверяем доступность Ollama
             models_response = self.ollama_client.list()
