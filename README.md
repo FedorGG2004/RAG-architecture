@@ -8,13 +8,21 @@
 3. python src/main.py
 
 загрузка на гитхаб в буферную ветку изменений локальных:
+
 cd C:\Users\Fedos\Desktop\RAG-architecture-main
+
 git init
+
 git remote add origin https://github.com/FedorGG2004/RAG-architecture.git
+
 git pull origin main
+
 git checkout -b buffer
+
 git add .
+
 git commit -m "Обновление: улучшен промпт, исправлена архитектура, добавлена модель llama3.2:3b"
+
 git push -u origin buffer
 
 
