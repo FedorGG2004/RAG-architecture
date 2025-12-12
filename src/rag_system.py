@@ -21,27 +21,30 @@ class RAGSystem:
                     server_info = self.mcp_client.get_server_info()
                     services = server_info.get("services", {})
                     
-                    logger.info("🚀 RAG система с УНИВЕРСАЛЬНЫМ MCP клиентом")
-                    logger.info(f"📊 Сервисы: БД({services.get('vector_db', 'unknown')}), Модели({services.get('llm_models', 'unknown')})")
+                    print("=" * 60)
+                    print("🚀 RAG система с УНИВЕРСАЛЬНЫМ MCP клиентом")
+                    print(f"📊 Сервисы: БД({services.get('vector_db', 'unknown')}), Модели({services.get('llm_models', 'unknown')})")
+                    print(f"🌐 Интернет-поиск: {services.get('internet_search', 'unknown')}")
+                    print("=" * 60)
                     
                     # Покажем доступные модели
                     available_models = self.mcp_client.list_models()
                     if available_models:
-                        logger.info(f"📋 Модели на сервере: {', '.join(available_models)}")
+                        print(f"📋 Модели на сервере: {', '.join(available_models)}")
                     else:
-                        logger.warning("⚠️ На сервере нет доступных моделей")
+                        print("⚠️ На сервере нет доступных моделей")
                 else:
-                    logger.error("❌ MCP сервер недоступен! Запустите: python mcp_servers/ai_mcp_server.py")
+                    print("❌ MCP сервер недоступен! Запустите: python mcp_servers/ai_mcp_server.py")
                     self.use_mcp = False
             except Exception as e:
-                logger.error(f"❌ Ошибка инициализации MCP клиента: {e}")
+                print(f"❌ Ошибка инициализации MCP клиента: {e}")
                 self.use_mcp = False
         else:
             from vector_db import VectorStore
             import ollama
             self.vector_db = VectorStore()
             self.ollama_client = ollama.Client()
-            logger.info("🔧 RAG система с прямыми вызовами")
+            print("🔧 RAG система с прямыми вызовами")
     
     def add_initial_knowledge(self):
         """Добавление начальных знаний через MCP сервер"""
@@ -87,6 +90,10 @@ class RAGSystem:
 
     def process_query(self, user_query: str) -> str:
         """Основной метод обработки запроса через MCP сервер"""
+        print(f"\n{'='*60}")
+        print(f"👤 ПОЛЬЗОВАТЕЛЬ: {user_query}")
+        print(f"{'='*60}")
+        
         logger.info(f"👤 Получен запрос: {user_query}")
         
         # Проверка на персональные данные перед отправкой на сервер
@@ -96,15 +103,19 @@ class RAGSystem:
             key, value = personal_fact
             self.user_preferences[key] = value
             logger.info(f"💾 Сохранено предпочтение: {key} = {value}")
-            return f"Запомнил! Ваше {key}: {value}"
+            response = f"✅ Запомнил! Ваше {key}: {value}"
+            print(f"[СИСТЕМА] {response}")
+            return response
         
         # Проверка запроса о сохраненных предпочтениях
         preference_answer = self.check_user_preferences(user_query)
         if preference_answer:
+            print(f"[СИСТЕМА] {preference_answer}")
             return preference_answer
         
         # Обычный RAG запрос через сервер
         if self.use_mcp:
+            print(f"[ПОИСК] 🔍 Ищу информацию по запросу: '{user_query}'")
             result = self.mcp_client.rag_query(
                 query=user_query,
                 model=self.model_name,
@@ -113,16 +124,41 @@ class RAGSystem:
             
             answer = result.get("answer", "Ошибка при обработке запроса")
             documents_found = result.get("documents_found", 0)
+            internet_results = result.get("internet_results", 0)
+            source = result.get("source", "unknown")
             timing = result.get("timing", {})
             
-            logger.info(f"✅ RAG ответ: {documents_found} док., {timing.get('total', 0)} сек")
+            # Подробное логирование
+            print(f"[БАЗА ДАННЫХ] 📊 Найдено документов: {documents_found}")
+            
+            if internet_results > 0:
+                print(f"[ИНТЕРНЕТ] 🌐 Найдено результатов: {internet_results}")
+                print(f"[СИСТЕМА] 💾 Сохраняю новую информацию в базу знаний...")
+            
+            if source == "интернет" or source == "база знаний + интернет":
+                print(f"[ИСТОЧНИК] 📍 Основной источник: интернет")
+            elif source == "база знаний":
+                print(f"[ИСТОЧНИК] 📍 Основной источник: база знаний")
+            else:
+                print(f"[ИСТОЧНИК] 📍 Основной источник: {source}")
+            
+            print(f"[ВРЕМЯ] ⏱️ Общее: {timing.get('total', 0):.2f} сек")
+            print(f"[ВРЕМЯ] 🔎 Поиск: {timing.get('search', 0):.2f} сек")
+            if internet_results > 0:
+                print(f"[ВРЕМЯ] 🌐 Интернет-поиск: {timing.get('internet_search', 0):.2f} сек")
+            print(f"[ВРЕМЯ] 🤖 Генерация: {timing.get('generation', 0):.2f} сек")
+            
+            logger.info(f"✅ RAG ответ: {documents_found} док., {internet_results} интернет, {timing.get('total', 0)} сек")
             
         else:
-            # Режим без MCP (для совместимости)
+            # Режим без MCP
+            print(f"[ПОИСК] 🔍 Ищу информацию в локальной базе данных...")
             relevant_docs = self.vector_db.search_similar(user_query)
             context = "\n".join(relevant_docs) if relevant_docs else "Информация не найдена в базе знаний."
             
-            # Простой промпт для локального режима (используется только если use_mcp=False)
+            if not relevant_docs:
+                print(f"[СИСТЕМА] 📭 Информация не найдена в базе знаний")
+            
             response = self.ollama_client.generate(
                 model=self.model_name,
                 prompt=f"Контекст: {context}\n\nВопрос: {user_query}\n\nОтвет:"
@@ -132,8 +168,9 @@ class RAGSystem:
         # Сохранение в историю
         self.dialog_history.extend([f"User: {user_query}", f"Assistant: {answer}"])
         
-        # Сохранение в базу знаний (только хорошие ответы)
+        # Сохранение в базу знаний
         if self.should_save_to_memory(user_query, answer):
+            print(f"[СОХРАНЕНИЕ] 💾 Сохраняю вопрос и ответ в базу знаний...")
             self.save_to_memory(user_query, answer)
         
         return answer
@@ -142,21 +179,32 @@ class RAGSystem:
         """Извлекает персональные факты из запроса"""
         query_lower = query.lower()
         
-        # Паттерны для извлечения фактов
-        if "любимое животное" in query_lower and ("это" in query_lower or "—" in query_lower or "-" in query_lower):
-            # Ищем название животного после "это"
-            parts = query_lower.split("это")
-            if len(parts) > 1:
-                animal = parts[1].strip()
-                if animal:
-                    return ("любимое животное", animal)
+        # Улучшенные паттерны для извлечения фактов
+        patterns = [
+            (r"мо[ёе] любимое животное[:\s\-—]*([^.?!]+)", "любимое животное"),
+            (r"любимое животное[:\s\-—]*([^.?!]+)", "любимое животное"),
+            (r"запомни[,]? мо[ёе] любимое животное[:\s\-—]*([^.?!]+)", "любимое животное"),
+            (r"мо[ёе] любимое животное это ([^.?!]+)", "любимое животное"),
+            (r"я люблю ([^.?!]+)", "любимое животное"),
+            (r"мне нравится ([^.?!]+)", "нравится"),
+            (r"моя любимая еда[:\s\-—]*([^.?!]+)", "любимая еда"),
+            (r"любимая еда[:\s\-—]*([^.?!]+)", "любимая еда"),
+        ]
         
-        if "запомни" in query_lower and "любимое животное" in query_lower:
-            parts = query_lower.split("любимое животное")
-            if len(parts) > 1:
-                animal = parts[1].replace("это", "").replace("—", "").replace("-", "").strip()
-                if animal:
-                    return ("любимое животное", animal)
+        for pattern, fact_type in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                value = match.group(1).strip()
+                if value and len(value) > 1:
+                    # Очищаем значение
+                    value = value.replace('это', '').replace('—', '').replace('-', '').strip()
+                    return (fact_type, value)
+        
+        # Проверяем прямые упоминания животных
+        animals = ["кенгуру", "собака", "кошка", "черепаха", "тигр", "лев", "слон", "обезьяна"]
+        for animal in animals:
+            if animal in query_lower and "любим" in query_lower:
+                return ("любимое животное", animal)
         
         return None
     
@@ -166,16 +214,16 @@ class RAGSystem:
         
         if "мое любимое животное" in query_lower or "моё любимое животное" in query_lower:
             if "любимое животное" in self.user_preferences:
-                return f"Ваше любимое животное: {self.user_preferences['любимое животное']}"
+                return f"✅ Ваше любимое животное: {self.user_preferences['любимое животное']}"
             else:
-                return "Я не знаю ваше любимое животное. Скажите мне, и я запомню!"
+                return "🤔 Я не знаю ваше любимое животное. Скажите мне, и я запомню!"
         
         if "какие у меня предпочтения" in query_lower or "что я говорил" in query_lower:
             if self.user_preferences:
-                prefs = ", ".join([f"{k}: {v}" for k, v in self.user_preferences.items()])
-                return f"Ваши предпочтения: {prefs}"
+                prefs = "\n".join([f"• {k}: {v}" for k, v in self.user_preferences.items()])
+                return f"📋 Ваши предпочтения:\n{prefs}"
             else:
-                return "У вас пока нет сохраненных предпочтений."
+                return "📝 У вас пока нет сохраненных предпочтений."
         
         return ""
     
@@ -203,31 +251,41 @@ class RAGSystem:
         if len(response.split('.')) < 1:
             return False
             
+        # Не сохраняем короткие ответы
+        if len(response) < 20:
+            return False
+            
         return True
     
     def save_to_memory(self, query: str, response: str):
         """Сохранение информации в базу знаний"""
         try:
             facts_to_save = [
-                f"Вопрос: {query}",
-                f"Ответ: {response}",
+                f"Вопрос пользователя: {query}",
+                f"Ответ ассистента: {response}",
             ]
             
             metadata = {
                 "type": "dialog",
                 "timestamp": datetime.now().isoformat(),
-                "source": "generated"
+                "source": "generated",
+                "query": query[:50]
             }
             
             for fact in facts_to_save:
                 if self.use_mcp:
-                    self.mcp_client.add_document(fact, metadata)
+                    success = self.mcp_client.add_document(fact, metadata)
+                    if success:
+                        print(f"[СОХРАНЕНИЕ] ✅ Информация сохранена в базу знаний")
+                    else:
+                        print(f"[СОХРАНЕНИЕ] ❌ Ошибка сохранения")
                 else:
                     self.vector_db.add_documents([fact], [metadata])
                     
             logger.info("💾 Информация сохранена в память")
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения в память: {e}")
+            print(f"[СОХРАНЕНИЕ] ❌ Ошибка: {e}")
     
     def get_system_info(self) -> dict:
         """Получение информации о системе"""
