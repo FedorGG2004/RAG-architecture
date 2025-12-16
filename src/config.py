@@ -8,7 +8,7 @@ VECTOR_DB_DIR = DATA_DIR / "chroma_db"
 
 # Настройки модели
 MODEL_NAME = "llama3.2:3b"
-OLLAMA_HOST = "http://localhost:11434"
+
 
 # Настройки векторной БД
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

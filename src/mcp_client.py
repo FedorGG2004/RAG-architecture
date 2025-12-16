@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """Универсальный клиент для работы с AI MCP сервером"""
     
-    def __init__(self, server_url: str = "http://ai-dev.hpclab:8000", timeout: int = 120):
+    def __init__(self, server_url: str = "http://localhost:8000", timeout: int = 120):
         self.server_url = server_url
         self.timeout = timeout
         self.session = requests.Session()
@@ -156,7 +156,7 @@ class MCPClient:
 
     # ==================== LLM МОДЕЛИ МЕТОДЫ ====================
     
-    def generate_text(self, prompt: str, model: str = "tinyllama:1.1b", options: Optional[Dict] = None) -> str:
+    def generate_text(self, prompt: str, model: str = "llama3.2:3b", options: Optional[Dict] = None) -> str:
         """Генерация текста через MCP сервер"""
         try:
             logger.info(f"🤖 MCP клиент: генерация текста моделью {model}")
@@ -188,7 +188,7 @@ class MCPClient:
             logger.error(f"❌ Ошибка генерации: {e}")
             return ""
 
-    def chat_completion(self, messages: List[Dict], model: str = "tinyllama:1.1b") -> str:
+    def chat_completion(self, messages: List[Dict], model: str = "llama3.2:3b") -> str:
         """Чат-комплишн через MCP сервер"""
         try:
             logger.info(f"💬 MCP клиент: чат-запрос к модели {model}")
@@ -247,7 +247,7 @@ class MCPClient:
 
     # ==================== RAG МЕТОДЫ ====================
     
-    def rag_query(self, query: str, model: str = "tinyllama:1.1b", top_k: int = 3) -> Dict[str, Any]:
+    def rag_query(self, query: str, model: str = "llama3.2:3b", top_k: int = 3) -> Dict[str, Any]:
         """Полный RAG pipeline через MCP сервер"""
         try:
             logger.info(f"🎯 MCP клиент: RAG запрос '{query}'")
